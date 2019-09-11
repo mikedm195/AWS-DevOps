@@ -4,6 +4,47 @@ Parameters:
     Type: String
 
 Resources:
+
+  RootRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: 
+        !Sub ${EnvironmentName}-Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+
+  RolePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: AmazonS3ReadOnlyAccess
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action: 
+          - s3:Get*
+          - s3:List*
+          Resource: 
+          - arn:aws:s3:::udagram-project-demo
+          - arn:aws:s3:::udagram-project-demo/*
+      Roles:
+      - Ref: RootRole
+
+  RootInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - Ref: RootRole
+
   LBSecGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -35,25 +76,19 @@ Resources:
           !Sub "${EnvironmentName}-VPCID"
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 8080
-          ToPort: 8080
+          FromPort: 80
+          ToPort: 80
           CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
+        # For testing purposes only
+        # - IpProtocol: tcp
+        #   FromPort: 22
+        #   ToPort: 22
+        #   CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
         - IpProtocol: tcp
           FromPort: 0
           ToPort: 65535
           CidrIp: 0.0.0.0/0
-
-  # instace profile contains the IAM Role name(s) that we want to associate to our auto scaling EC2 Servers
-  ProfileWithRolesForOurApp:
-    Type: AWS::IAM::InstanceProfile
-    Properties: 
-      Roles:
-        - UdacityS3ReadOnlyEC2
 
   WebAppLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
@@ -61,56 +96,20 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Install docker
-          # apt-get update
-          # apt-get install apt-transport-https ca-certificates curl gnupg-agent software-properties-common
-          # curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-          # add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-          # apt-get update
-          # apt-get install -y docker-ce
-          # mkdir docker-test
-          # cd docker-test
-          # wget https://udacity-cloud-nanodegree-p2.s3-us-west-2.amazonaws.com/data.zip
-          # apt-get install unzip
-          # unzip data.zip
-          # echo "FROM ubuntu:latest" >> Dockerfile
-          # echo "RUN apt-get update" >> Dockerfile
-          # echo "RUN apt-get install -y nodejs" >> Dockerfile
-          # echo "RUN apt-get install -y npm" >> Dockerfile
-          # echo "RUN npm install -g http-server" >> Dockerfile
-          # echo "WORKDIR /usr/apps/test-docker/" >> Dockerfile
-          # echo "COPY index.html /usr/apps/test-docker/" >> Dockerfile
-          # echo 'CMD ["http-server", "-s"]' >> Dockerfile
-          # docker build -t "test:test-docker" .
-          # usermod -aG docker ubuntu
-          # docker run -d -p 8080:8080 "test:test-docker"
-          #!/bin/bash
           apt-get update -y
           apt-get install unzip awscli -y
           apt-get install apache2 -y
           systemctl start apache2.service
           cd /var/www/html
-          echo "Hello Udacity!" > index.html
           aws s3 cp s3://udagram-project-demo/udacity.zip .
           unzip -o udacity.zip
-      # AssociatePublicIpAddress: Boolean
-      # ClassicLinkVPCId: String
-      # ClassicLinkVPCSecurityGroups: 
-      #   - String
-      # EbsOptimized: Boolean
-      IamInstanceProfile: !Ref ProfileWithRolesForOurApp
+      IamInstanceProfile: !Ref RootInstanceProfile
       ImageId: ami-005bdb005fb00e791
-      # InstanceId: String
-      # InstanceMonitoring: Boolean
-      # KernelId: String
-      KeyName: my-key
-      # LaunchConfigurationName: String
-      # PlacementTenancy: String
-      # RamDiskId: String
-      SecurityGroups: 
+      # For testing purposes only
+      # KeyName: my-key 
+      SecurityGroups:
       - Ref: WebServerSecGroup
       InstanceType: t3.medium
-      # SpotPrice: String
       BlockDeviceMappings:
       - DeviceName: "/dev/sdk"
         Ebs:
@@ -133,8 +132,8 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Subnets:
-      - Fn::ImportValue: !Sub "${EnvironmentName}-PRI1-SN"
-      - Fn::ImportValue: !Sub "${EnvironmentName}-PRI2-SN"
+      - Fn::ImportValue: !Sub "${EnvironmentName}-PUB1-SN"
+      - Fn::ImportValue: !Sub "${EnvironmentName}-PUB2-SN"
       SecurityGroups:
       - Ref: LBSecGroup
 
@@ -170,7 +169,7 @@ Resources:
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 8
       HealthyThresholdCount: 2
-      Port: 8080
+      Port: 80
       Protocol: HTTP
       UnhealthyThresholdCount: 5
       VpcId:
